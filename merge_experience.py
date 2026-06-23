@@ -28,10 +28,16 @@ NAV_CSS = """
     position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
     display: flex; gap: 10px; z-index: 100;
     font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--brass);
-    letter-spacing: 0.08em; pointer-events: none;
+    letter-spacing: 0.08em;
   }
-  .chapter-dots span { opacity: 0.35; }
-  .chapter-dots span.active { opacity: 1; color: var(--amber); }
+  .chapter-dots button {
+    background: none; border: none; padding: 4px 6px; margin: 0;
+    font: inherit; color: inherit; letter-spacing: inherit;
+    cursor: pointer; opacity: 0.35;
+    transition: opacity 0.2s ease, color 0.2s ease;
+  }
+  .chapter-dots button:hover { opacity: 0.7; }
+  .chapter-dots button.active { opacity: 1; color: var(--amber); }
   .chapter-next-btn, .chapter-ghost-btn, .chapter-padlet-btn {
     font-family: 'IBM Plex Mono', monospace; font-size: 14px; letter-spacing: 0.04em;
     background: transparent; border: 1.5px solid var(--amber); color: var(--amber);
@@ -217,7 +223,8 @@ def main():
         )
 
     dots = "".join(
-        f'<span id="dot-{ch["prefix"]}"{" class=\"active\"" if i == 0 else ""}>{i + 1}. {ch["title"]}</span>'
+        f'<button type="button" id="dot-{ch["prefix"]}" data-chapter="{ch["id"]}"'
+        f'{" class=\"active\"" if i == 0 else ""}>{i + 1}. {ch["title"]}</button>'
         for i, ch in enumerate(CHAPTERS)
     )
 
@@ -242,6 +249,12 @@ def main():
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  document.querySelectorAll('.chapter-dots button[data-chapter]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      window.goToChapter(btn.getAttribute('data-chapter'));
+    });
+  });
 })();
 """
 
@@ -259,7 +272,7 @@ def main():
 </style>
 </head>
 <body>
-<div class="chapter-dots" aria-hidden="true">{dots}</div>
+<div class="chapter-dots" role="tablist" aria-label="체험 단계">{dots}</div>
 {"".join(chapter_html_parts)}
 <script>
 {nav_js}
