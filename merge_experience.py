@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Merge bag + photo HTML experiences into one index.html."""
+"""Merge bag + photo + interview HTML experiences into one index.html."""
 import re
 from pathlib import Path
 
@@ -19,6 +19,13 @@ CHAPTERS = [
         "prefix": "photo",
         "title": "역사 사진 카드",
     },
+    {
+        "file": "1950_busan_ai_interview_select.html",
+        "id": "chapter-interview",
+        "prefix": "interview",
+        "title": "그 시절 사람들의 목소리",
+        "alt_paths": ["인터뷰/1950_busan_ai_interview_select.html"],
+    },
 ]
 
 NAV_CSS = """
@@ -26,14 +33,15 @@ NAV_CSS = """
   .chapter.active { display: block; }
   .chapter-dots {
     position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
-    display: flex; gap: 10px; z-index: 100;
+    display: flex; gap: 8px; z-index: 100; flex-wrap: wrap; justify-content: center;
+    max-width: 96vw;
     font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--brass);
     letter-spacing: 0.08em;
   }
   .chapter-dots button {
     background: none; border: none; padding: 4px 6px; margin: 0;
     font: inherit; color: inherit; letter-spacing: inherit;
-    cursor: pointer; opacity: 0.35;
+    cursor: pointer; opacity: 0.35; white-space: nowrap;
     transition: opacity 0.2s ease, color 0.2s ease;
   }
   .chapter-dots button:hover { opacity: 0.7; }
@@ -66,6 +74,17 @@ NAV_CSS = """
     display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 16px;
   }
 """
+
+
+def resolve_chapter_path(ch: dict) -> Path:
+    primary = ROOT / ch["file"]
+    if primary.exists():
+        return primary
+    for rel in ch.get("alt_paths", []):
+        alt = ROOT / rel
+        if alt.exists():
+            return alt
+    raise FileNotFoundError(f"Chapter file not found: {ch['file']}")
 
 
 def extract_parts(filepath: Path):
@@ -134,7 +153,7 @@ def inject_bag_nav(body: str) -> str:
 def inject_photo_nav(body: str) -> str:
     body = body.replace(
         "이제 활동3에서는 그 시절 사람들의 목소리를 더 가까이 들어보겠습니다.",
-        "여러분이 살펴본 사진들은 1950년 부산을 살아간 사람들의 진짜 증거입니다.",
+        "이제 그때 그곳에 있었던 사람들의 목소리를 직접 들어볼 시간입니다.",
     )
     body = body.replace(
         '<div class="nav-row">\n      <button class="nav-btn ghost" id="photo-prevBtn">← 이전</button>\n'
@@ -143,6 +162,7 @@ def inject_photo_nav(body: str) -> str:
         '      <button class="nav-btn ghost" id="photo-backToBagBtn">← 피란 가방</button>\n'
         '      <button class="nav-btn ghost" id="photo-prevBtn">← 이전</button>\n'
         '      <button class="nav-btn" id="photo-nextBtn" disabled>다음 →</button>\n'
+        '      <button class="nav-btn ghost" id="photo-goInterviewBtn">목소리 →</button>\n'
         '    </div>',
         1,
     )
@@ -150,7 +170,26 @@ def inject_photo_nav(body: str) -> str:
     new = (
         '<button class="nav-btn ghost" id="photo-backToBagBtn2">← 피란 가방</button>'
         '<button class="nav-btn ghost" id="photo-backToCardsBtn">← 카드 다시 보기</button>'
-        '<button class="nav-btn" id="photo-restartBtn">처음부터 다시</button>'
+        '<button class="nav-btn" id="photo-goInterviewBtn2">그 시절 사람들의 목소리 →</button>'
+        '<button class="nav-btn ghost" id="photo-restartBtn">처음부터 다시</button>'
+    )
+    return body.replace(old, new, 1)
+
+
+def inject_interview_nav(body: str) -> str:
+    old = (
+        "    </ul>\n"
+        "  </div>\n"
+        "</div>"
+    )
+    new = (
+        "    </ul>\n"
+        "  </div>\n"
+        '  <div class="chapter-nav-row">'
+        '<button type="button" class="chapter-ghost-btn" id="interview-backToPhotosBtn">← 역사 사진</button>'
+        '<button type="button" class="chapter-ghost-btn" id="interview-restartBtn">처음부터 다시</button>'
+        "</div>\n"
+        "</div>"
     )
     return body.replace(old, new, 1)
 
@@ -177,11 +216,18 @@ def patch_photo_script(script: str) -> str:
         "  function goBackToBag(){\n"
         "    window.goToChapter('chapter-bag');\n"
         "  }\n"
+        "  function goToInterview(){\n"
+        "    window.goToChapter('chapter-interview');\n"
+        "  }\n"
         "  var backToBagBtn = document.getElementById('photo-backToBagBtn');\n"
         "  var backToBagBtn2 = document.getElementById('photo-backToBagBtn2');\n"
+        "  var goInterviewBtn = document.getElementById('photo-goInterviewBtn');\n"
+        "  var goInterviewBtn2 = document.getElementById('photo-goInterviewBtn2');\n"
         "  var restartBtn = document.getElementById('photo-restartBtn');\n"
         "  if(backToBagBtn){ backToBagBtn.addEventListener('click', goBackToBag); }\n"
         "  if(backToBagBtn2){ backToBagBtn2.addEventListener('click', goBackToBag); }\n"
+        "  if(goInterviewBtn){ goInterviewBtn.addEventListener('click', goToInterview); }\n"
+        "  if(goInterviewBtn2){ goInterviewBtn2.addEventListener('click', goToInterview); }\n"
         "  if(restartBtn){\n"
         "    restartBtn.addEventListener('click', function(){ location.reload(); });\n"
         "  }\n\n"
@@ -190,16 +236,78 @@ def patch_photo_script(script: str) -> str:
     return script
 
 
+def patch_interview_script(script: str) -> str:
+    if not script.strip():
+        return (
+            "(function(){\n"
+            "  var backBtn = document.getElementById('interview-backToPhotosBtn');\n"
+            "  var restartBtn = document.getElementById('interview-restartBtn');\n"
+            "  if(backBtn){\n"
+            "    backBtn.addEventListener('click', function(){ window.goToChapter('chapter-photos'); });\n"
+            "  }\n"
+            "  if(restartBtn){\n"
+            "    restartBtn.addEventListener('click', function(){ location.reload(); });\n"
+            "  }\n"
+            "})();"
+        )
+    return script
+
+
+def build_nav_js() -> str:
+    chapter_ids = [ch["id"] for ch in CHAPTERS]
+    dots_entries = ",\n    ".join(
+        f"'{ch['id']}': document.getElementById('dot-{ch['prefix']}')"
+        for ch in CHAPTERS
+    )
+    chapters_js = ", ".join(f"'{cid}'" for cid in chapter_ids)
+    return f"""
+(function(){{
+  var chapters = [{chapters_js}];
+  var dots = {{
+    {dots_entries}
+  }};
+
+  window.goToChapter = function(id){{
+    chapters.forEach(function(cid){{
+      var el = document.getElementById(cid);
+      if(el){{
+        if(cid !== id){{
+          el.querySelectorAll('audio').forEach(function(a){{ a.pause(); }});
+        }}
+        el.classList.toggle('active', cid === id);
+      }}
+      if(dots[cid]) dots[cid].classList.toggle('active', cid === id);
+    }});
+    window.scrollTo({{ top: 0, behavior: 'smooth' }});
+  }};
+
+  document.querySelectorAll('.chapter-dots button[data-chapter]').forEach(function(btn){{
+    btn.addEventListener('click', function(){{
+      window.goToChapter(btn.getAttribute('data-chapter'));
+    }});
+  }});
+}})();
+"""
+
+
 def main():
     all_styles = []
     chapter_html_parts = []
     all_scripts = []
 
-    injectors = {"bag": inject_bag_nav, "photo": inject_photo_nav}
-    patchers = {"bag": patch_bag_script, "photo": patch_photo_script}
+    injectors = {
+        "bag": inject_bag_nav,
+        "photo": inject_photo_nav,
+        "interview": inject_interview_nav,
+    }
+    patchers = {
+        "bag": patch_bag_script,
+        "photo": patch_photo_script,
+        "interview": patch_interview_script,
+    }
 
     for i, ch in enumerate(CHAPTERS):
-        path = ROOT / ch["file"]
+        path = resolve_chapter_path(ch)
         style, body, scripts = extract_parts(path)
         all_styles.append(f"/* --- {ch['title']} --- */\n" + style)
 
@@ -209,13 +317,16 @@ def main():
             body = injectors[ch["prefix"]](body)
 
         ids = collect_ids(body, *scripts)
-        for script in scripts:
-            s = prefix_content(script, ch["prefix"], ids)
-            if s.strip().startswith("(function()"):
-                s = scope_script(s, ch["id"])
-                if ch["prefix"] in patchers:
-                    s = patchers[ch["prefix"]](s)
-            all_scripts.append(s)
+        if scripts:
+            for script in scripts:
+                s = prefix_content(script, ch["prefix"], ids)
+                if s.strip().startswith("(function()"):
+                    s = scope_script(s, ch["id"])
+                    if ch["prefix"] in patchers:
+                        s = patchers[ch["prefix"]](s)
+                all_scripts.append(s)
+        elif ch["prefix"] in patchers:
+            all_scripts.append(patchers[ch["prefix"]](""))
 
         active = " active" if i == 0 else ""
         chapter_html_parts.append(
@@ -227,36 +338,6 @@ def main():
         f'{" class=\"active\"" if i == 0 else ""}>{i + 1}. {ch["title"]}</button>'
         for i, ch in enumerate(CHAPTERS)
     )
-
-    nav_js = """
-(function(){
-  var chapters = ['chapter-bag', 'chapter-photos'];
-  var dots = {
-    'chapter-bag': document.getElementById('dot-bag'),
-    'chapter-photos': document.getElementById('dot-photo')
-  };
-
-  window.goToChapter = function(id){
-    chapters.forEach(function(cid){
-      var el = document.getElementById(cid);
-      if(el){
-        if(cid !== id){
-          el.querySelectorAll('audio').forEach(function(a){ a.pause(); });
-        }
-        el.classList.toggle('active', cid === id);
-      }
-      if(dots[cid]) dots[cid].classList.toggle('active', cid === id);
-    });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  document.querySelectorAll('.chapter-dots button[data-chapter]').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      window.goToChapter(btn.getAttribute('data-chapter'));
-    });
-  });
-})();
-"""
 
     html = f"""<!DOCTYPE html>
 <html lang="ko">
@@ -275,7 +356,7 @@ def main():
 <div class="chapter-dots" role="tablist" aria-label="체험 단계">{dots}</div>
 {"".join(chapter_html_parts)}
 <script>
-{nav_js}
+{build_nav_js()}
 {"".join(all_scripts)}
 </script>
 </body>
